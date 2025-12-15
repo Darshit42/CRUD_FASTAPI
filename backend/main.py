@@ -1,29 +1,31 @@
-import sys
-from pathlib import Path
-import os
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+import os
 
-if __package__ is None or __package__ == "":
-    sys.path.append(str(Path(__file__).resolve().parent.parent))
-    from backend import models, schemas  # type: ignore
-    from backend.database import Base, engine, get_db  # type: ignore
-else:
-    from . import models, schemas
-    from .database import Base, engine, get_db
-
-Base.metadata.create_all(bind=engine)
+from . import models, schemas
+from .database import Base, engine, get_db
 
 app = FastAPI(title="FastAPI CRUD Example")
 
+
+@app.on_event("startup")
+def on_startup():
+    Base.metadata.create_all(bind=engine)
+
+
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+frontend = os.getenv("FRONTEND_ORIGINS")
+if frontend:
+    origins.append(frontend)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.getenv("FRONTEND_ORIGINS"),
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -60,7 +62,7 @@ def update_item(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
-    for key, value in payload.dict().items():
+    for key, value in payload.dict(exclude_unset=True).items():
         setattr(item, key, value)
 
     db.commit()
@@ -76,13 +78,3 @@ def delete_item(item_id: int, db: Session = Depends(get_db)):
 
     db.delete(item)
     db.commit()
-    return None
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    # When running as a script, avoid reload (needs import string). For reload,
-    # prefer: `uvicorn backend.main:app --reload`.
-    uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
-
